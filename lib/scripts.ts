@@ -1,18 +1,6 @@
 import * as anchor from '@coral-xyz/anchor';
-import {
-  PublicKey,
-  Connection,
-  SystemProgram,
-  SYSVAR_RENT_PUBKEY,
-  Transaction,
-} from '@solana/web3.js';
+import { PublicKey, Transaction } from '@solana/web3.js';
 
-import {
-  ASSOCIATED_TOKEN_PROGRAM_ID,
-  TOKEN_PROGRAM_ID,
-} from '@solana/spl-token';
-
-import { getAssociatedTokenAccount } from './util';
 import {
   ASK_BOOK_SEED,
   BID_BOOK_SEED,
@@ -20,8 +8,8 @@ import {
   MARKET_SEED,
   USER_MARKET_ORDER_SEED,
 } from './constant';
-import { HybridDex } from '../target/types/hybrid_dex';
-import { Market, MARKET_SIZE, serializeSide, Side } from './types';
+import { HybridDex } from './hybrid_dex';
+import { Market, MARKET_SIZE, Side } from './types';
 
 export const createInitializeTx = async (
   admin: PublicKey,
@@ -312,11 +300,7 @@ export const getGlobalState = async (program: anchor.Program<HybridDex>) => {
     };
   } catch (e) {
     console.error(e);
-
-    return {
-      key: globalPool,
-      data: null,
-    };
+    throw e;
   }
 };
 
@@ -336,11 +320,7 @@ export const getMarketState = async (
     };
   } catch (e) {
     console.error(e);
-
-    return {
-      key: market,
-      data: null,
-    };
+    throw e;
   }
 };
 

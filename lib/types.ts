@@ -42,11 +42,6 @@ export enum Side {
   Ask = 1,
 }
 
-export const serializeSide = (side: Side): any => {
-  if (side === Side.Bid) return { bid: {} };
-  else return { ask: {} };
-};
-
 export const sideFromStr = (side: string): Side => {
   if (side === 'bid') return Side.Bid;
   else return Side.Ask;
