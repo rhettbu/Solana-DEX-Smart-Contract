@@ -4,15 +4,20 @@ import {
   changeAdmin,
   getGlobalInfo,
   initProject,
-  initializeUserPool,
   setClusterConfig,
-  getUserInfo,
   changeConfig,
-  sweepVaultFunds,
-  buyWithSol,
-  buyWithUsdt,
-  claimToken,
+  createMarket,
+  closeMarket,
+  createOpenOrders,
+  placeOrder,
+  cancelOrder,
+  takeOrder,
+  getMarketInfo,
+  getUserOrdersInfo,
+  getOrderBooksInfo,
+  getAllMarkets,
 } from './scripts';
+import { sideFromStr } from '../lib/types';
 
 // program.version('0.0.1');
 
@@ -31,26 +36,10 @@ programCommand('status')
 
 programCommand('init')
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  .requiredOption('-min, --min_amount <number>')
-  .requiredOption('-max, --max_amount <number>')
-  .requiredOption('-st, --start_date <number>')
-  .requiredOption('-en, --end_date <number>')
-  .requiredOption('-ps, --price_with_sol <number>')
-  .requiredOption('-pu, --price_with_usdt <number>')
-  .requiredOption('-pc, --price_with_usdc <number>')
+  .requiredOption('-opb, --order_per_book <number>')
+  .requiredOption('-opu, --order_per_user <number>')
   .action(async (directory, cmd) => {
-    const {
-      env,
-      keypair,
-      rpc,
-      min_amount,
-      max_amount,
-      start_date,
-      end_date,
-      price_with_sol,
-      price_with_usdt,
-      price_with_usdc,
-    } = cmd.opts();
+    const { env, keypair, rpc, order_per_book, order_per_user } = cmd.opts();
 
     console.log('Solana Cluster:', env);
     console.log('Keypair Path:', keypair);
@@ -58,15 +47,7 @@ programCommand('init')
 
     await setClusterConfig(env, keypair, rpc);
 
-    await initProject(
-      Number(min_amount),
-      Number(max_amount),
-      Number(price_with_sol),
-      Number(price_with_usdt),
-      Number(price_with_usdc),
-      Number(start_date),
-      Number(end_date)
-    );
+    await initProject(Number(order_per_book), Number(order_per_user));
   });
 
 programCommand('change-admin')
@@ -86,26 +67,10 @@ programCommand('change-admin')
 
 programCommand('change-config')
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  .option('-min, --min_amount <number>')
-  .option('-max, --max_amount <number>')
-  .option('-st, --start_date <number>')
-  .option('-en, --end_date <number>')
-  .option('-ps, --price_with_sol <number>')
-  .option('-pu, --price_with_usdt <number>')
-  .option('-pc, --price_with_usdc <number>')
+  .option('-opb, --order_per_book <number>')
+  .option('-opu, --order_per_user <number>')
   .action(async (directory, cmd) => {
-    const {
-      env,
-      keypair,
-      rpc,
-      min_amount,
-      max_amount,
-      start_date,
-      end_date,
-      price_with_sol,
-      price_with_usdt,
-      price_with_usdc,
-    } = cmd.opts();
+    const { env, keypair, rpc, order_per_book, order_per_user } = cmd.opts();
 
     console.log('Solana Cluster:', env);
     console.log('Keypair Path:', keypair);
@@ -114,49 +79,36 @@ programCommand('change-config')
     await setClusterConfig(env, keypair, rpc);
 
     await changeConfig(
-      min_amount ? Number(min_amount) : undefined,
-      max_amount ? Number(max_amount) : undefined,
-      price_with_sol ? Number(price_with_sol) : undefined,
-      price_with_usdt ? Number(price_with_usdt) : undefined,
-      price_with_usdc ? Number(price_with_usdc) : undefined,
-      start_date ? Number(start_date) : undefined,
-      end_date ? Number(end_date) : undefined
+      order_per_book ? Number(order_per_book) : undefined,
+      order_per_user ? Number(order_per_user) : undefined
     );
   });
 
-programCommand('sweep')
+programCommand('create-market')
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  .requiredOption('-b --base_mint <string>')
+  .requiredOption('-q --quote_mint <string>')
+  .requiredOption('-n --name <string>')
   .action(async (directory, cmd) => {
-    const { env, keypair, rpc } = cmd.opts();
+    const { env, keypair, rpc, base_mint, quote_mint, name } = cmd.opts();
 
     console.log('Solana Cluster:', env);
     console.log('Keypair Path:', keypair);
     console.log('RPC URL:', rpc);
     await setClusterConfig(env, keypair, rpc);
 
-    await sweepVaultFunds();
+    await createMarket(
+      new PublicKey(base_mint),
+      new PublicKey(quote_mint),
+      name
+    );
   });
 
-programCommand('buy-sol')
+programCommand('close-market')
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  .requiredOption('-m, --amount <number>')
+  .requiredOption('-m, --market <string>')
   .action(async (directory, cmd) => {
-    const { env, keypair, rpc, amount } = cmd.opts();
-
-    console.log('Solana Cluster:', env);
-    console.log('Keypair Path:', keypair);
-    console.log('RPC URL:', rpc);
-
-    await setClusterConfig(env, keypair, rpc);
-
-    await buyWithSol(Number(amount));
-  });
-
-programCommand('buy-usdt')
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  .requiredOption('-m, --amount <number>')
-  .action(async (directory, cmd) => {
-    const { env, keypair, rpc, amount } = cmd.opts();
+    const { env, keypair, rpc, market } = cmd.opts();
 
     console.log('Solana Cluster:', env);
     console.log('Keypair Path:', keypair);
@@ -164,14 +116,14 @@ programCommand('buy-usdt')
 
     await setClusterConfig(env, keypair, rpc);
 
-    await buyWithUsdt(Number(amount));
+    await closeMarket(new PublicKey(market));
   });
 
-programCommand('buy-usdc')
+programCommand('create-user-orders')
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  .requiredOption('-m, --amount <number>')
+  .requiredOption('-m, --market <string>')
   .action(async (directory, cmd) => {
-    const { env, keypair, rpc, amount } = cmd.opts();
+    const { env, keypair, rpc, market } = cmd.opts();
 
     console.log('Solana Cluster:', env);
     console.log('Keypair Path:', keypair);
@@ -179,13 +131,17 @@ programCommand('buy-usdc')
 
     await setClusterConfig(env, keypair, rpc);
 
-    await buyWithUsdt(Number(amount));
+    await createOpenOrders(new PublicKey(market));
   });
 
-programCommand('claim')
+programCommand('place-order')
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  .requiredOption('-m, --market <string>')
+  .requiredOption('-s, --side <string>') // bid or ask
+  .requiredOption('-p, --price <number>')
+  .requiredOption('-q, --quantity <number>')
   .action(async (directory, cmd) => {
-    const { env, keypair, rpc, claim } = cmd.opts();
+    const { env, keypair, rpc, market, side, price, quantity } = cmd.opts();
 
     console.log('Solana Cluster:', env);
     console.log('Keypair Path:', keypair);
@@ -193,28 +149,100 @@ programCommand('claim')
 
     await setClusterConfig(env, keypair, rpc);
 
-    await claimToken();
+    await placeOrder(
+      new PublicKey(market),
+      sideFromStr(side),
+      Number(price),
+      Number(quantity)
+    );
   });
 
-programCommand('user-status')
+programCommand('cancel-order')
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  .requiredOption('-m, --market <string>')
+  .requiredOption('-s, --side <string>')
+  .requiredOption('-o, --order_id <number>')
+  .action(async (directory, cmd) => {
+    const { env, keypair, rpc, market, side, order_id } = cmd.opts();
+
+    console.log('Solana Cluster:', env);
+    console.log('Keypair Path:', keypair);
+    console.log('RPC URL:', rpc);
+
+    await setClusterConfig(env, keypair, rpc);
+
+    await cancelOrder(
+      new PublicKey(market),
+      sideFromStr(side),
+      Number(order_id)
+    );
+  });
+
+programCommand('take-order')
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  .requiredOption('-m, --market <string>')
+  .requiredOption('-a, --maker <string>')
+  .requiredOption('-s, --side <string>')
+  .requiredOption('-o, --order_id <number>')
+  .action(async (directory, cmd) => {
+    const { env, keypair, rpc, market, maker, side, order_id } = cmd.opts();
+
+    console.log('Solana Cluster:', env);
+    console.log('Keypair Path:', keypair);
+    console.log('RPC URL:', rpc);
+
+    await setClusterConfig(env, keypair, rpc);
+
+    await takeOrder(
+      new PublicKey(market),
+      new PublicKey(maker),
+      sideFromStr(side),
+      Number(order_id)
+    );
+  });
+
+programCommand('market')
+  .requiredOption('-m, --market <string>')
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  .action(async (directory, cmd) => {
+    const { env, keypair, rpc, market } = cmd.opts();
+
+    console.log('Solana Cluster:', env);
+    console.log('Keypair Path:', keypair);
+    console.log('RPC URL:', rpc);
+
+    await setClusterConfig(env, keypair, rpc);
+
+    console.log(await getMarketInfo(new PublicKey(market)));
+  });
+
+programCommand('all-markets')
+  .option('-b, --base <string>')
+  .option('-q, --quote <string>')
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  .action(async (directory, cmd) => {
+    const { env, keypair, rpc, base, quote } = cmd.opts();
+
+    console.log('Solana Cluster:', env);
+    console.log('Keypair Path:', keypair);
+    console.log('RPC URL:', rpc);
+
+    await setClusterConfig(env, keypair, rpc);
+
+    console.log(
+      await getAllMarkets({
+        base: base ? new PublicKey(base) : undefined,
+        quote: quote ? new PublicKey(quote) : undefined,
+      })
+    );
+  });
+
+programCommand('user-orders')
+  .requiredOption('-m, --market <string>')
   .requiredOption('-a, --user_address <string>')
-  .action(async (directory, cmd) => {
-    const { env, keypair, rpc, user_address } = cmd.opts();
-
-    console.log('Solana Cluster:', env);
-    console.log('Keypair Path:', keypair);
-    console.log('RPC URL:', rpc);
-
-    await setClusterConfig(env, keypair, rpc);
-
-    await getUserInfo(new PublicKey(user_address));
-  });
-
-programCommand('init-user')
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   .action(async (directory, cmd) => {
-    const { env, keypair, rpc } = cmd.opts();
+    const { env, keypair, rpc, market, user_address } = cmd.opts();
 
     console.log('Solana Cluster:', env);
     console.log('Keypair Path:', keypair);
@@ -222,25 +250,47 @@ programCommand('init-user')
 
     await setClusterConfig(env, keypair, rpc);
 
-    await initializeUserPool();
+    console.log(
+      await getUserOrdersInfo(
+        new PublicKey(market),
+        new PublicKey(user_address)
+      )
+    );
+  });
+
+programCommand('order-book')
+  .requiredOption('-m, --market <string>')
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  .action(async (directory, cmd) => {
+    const { env, keypair, rpc, market } = cmd.opts();
+
+    console.log('Solana Cluster:', env);
+    console.log('Keypair Path:', keypair);
+    console.log('RPC URL:', rpc);
+
+    await setClusterConfig(env, keypair, rpc);
+
+    console.dir(await getOrderBooksInfo(new PublicKey(market)), {
+      depth: null,
+    });
   });
 
 function programCommand(name: string) {
   return (
     program
       .command(name)
-      .option('-e, --env <string>', 'Solana cluster env name', 'mainnet-beta') //mainnet-beta, testnet, devnet
+      .option('-e, --env <string>', 'Solana cluster env name', 'devnet') //mainnet-beta, testnet, devnet
       .option(
         '-r, --rpc <string>',
-        'Solana cluster RPC name',
-        'https://devnet.helius-rpc.com/?api-key=44b7171f-7de7-4e68-9d08-eff1ef7529bd'
+        'Solana cluster RPC name'
+        // 'https://devnet.helius-rpc.com/?api-key=44b7171f-7de7-4e68-9d08-eff1ef7529bd'
         // 'https://flashy-cosmological-pallet.solana-mainnet.quiknode.pro/86e2f4bc350a6fb8dbcb110df4d030a205455f70/'
       )
       // .option('-r, --rpc <string>', 'Solana cluster RPC name', 'https://mainnet.helius-rpc.com/?api-key=99c6d984-537e-4569-955b-5e4703b73c0d')
       .option(
         '-k, --keypair <string>',
         'Solana wallet Keypair Path',
-        './deploy.json'
+        '../deploy.json'
       )
   );
 }

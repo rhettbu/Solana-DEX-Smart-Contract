@@ -35,14 +35,21 @@ export interface Market {
   orderSeqNum: anchor.BN;
 }
 
+export const MARKET_SIZE = 8 + 8 + 16 + 32 * 5 + 8 + 8 * 4 + 16;
+
 export enum Side {
   Bid = 0,
   Ask = 1,
 }
 
-export const serializeSide = (side: Side) => {
+export const serializeSide = (side: Side): any => {
   if (side === Side.Bid) return { bid: {} };
   else return { ask: {} };
+};
+
+export const sideFromStr = (side: string): Side => {
+  if (side === 'bid') return Side.Bid;
+  else return Side.Ask;
 };
 
 export type OpenedOrder = {

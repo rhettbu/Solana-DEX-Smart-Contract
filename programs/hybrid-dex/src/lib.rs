@@ -12,7 +12,7 @@ pub use instructions::*;
 pub use state::*;
 pub use utils::*;
 
-declare_id!("6z1NX1CodyGPbJ8sAVirasDsYgw1xSnkyjyprSnMfvRy");
+declare_id!("G12WABos41DU4ic2RLea5qwCfSyvB83XdKz9CMdiJLUW");
 
 #[program]
 pub mod hybrid_dex {
@@ -59,33 +59,53 @@ pub mod hybrid_dex {
         CreateOpenOrders::process_instruction(&mut ctx)
     }
 
-    /** Place order as maker */
-    pub fn place_order(
-        mut ctx: Context<PlaceOrder>,
-        side: Side,
+    /** Place buy order as maker */
+    pub fn place_buy_order(
+        mut ctx: Context<PlaceBuyOrder>,
         price: u64,
         quantity: u64,
     ) -> Result<()> {
-        PlaceOrder::process_instruction(&mut ctx, side, price, quantity)
+        PlaceBuyOrder::process_instruction(&mut ctx, price, quantity)
     }
 
-    /** Cancel order as owner */
-    pub fn cancel_order(
-        mut ctx: Context<CancelOrder>,
-        seed: u64,
-        side: Side,
-        order_id: u64,
+    /** Place sell order as maker */
+    pub fn place_sell_order(
+        mut ctx: Context<PlaceSellOrder>,
+        price: u64,
+        quantity: u64,
     ) -> Result<()> {
-        CancelOrder::process_instruction(&mut ctx, seed, side, order_id)
+        PlaceSellOrder::process_instruction(&mut ctx, price, quantity)
     }
 
-    /** Take order as taker */
-    pub fn take_order(
-        mut ctx: Context<TakeOrder>,
+    /** Cancel buy order as owner */
+    pub fn cancel_buy_order(
+        mut ctx: Context<CancelBuyOrder>,
         seed: u64,
-        side: Side,
         order_id: u64,
     ) -> Result<()> {
-        TakeOrder::process_instruction(&mut ctx, seed, side, order_id)
+        CancelBuyOrder::process_instruction(&mut ctx, seed, order_id)
+    }
+
+    /** Cancel sell order as owner */
+    pub fn cancel_sell_order(
+        mut ctx: Context<CancelSellOrder>,
+        seed: u64,
+        order_id: u64,
+    ) -> Result<()> {
+        CancelSellOrder::process_instruction(&mut ctx, seed, order_id)
+    }
+
+    /** Take buy order as taker */
+    pub fn take_buy_order(mut ctx: Context<TakeBuyOrder>, seed: u64, order_id: u64) -> Result<()> {
+        TakeBuyOrder::process_instruction(&mut ctx, seed, order_id)
+    }
+
+    /** Take sell order as taker */
+    pub fn take_sell_order(
+        mut ctx: Context<TakeSellOrder>,
+        seed: u64,
+        order_id: u64,
+    ) -> Result<()> {
+        TakeSellOrder::process_instruction(&mut ctx, seed, order_id)
     }
 }

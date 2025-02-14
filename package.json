@@ -2,7 +2,7 @@
   "license": "ISC",  
   "scripts": {
     "lint:fix": "prettier */*.js \"*/**/*{.js,.ts}\" -w",
-    "ts-node": "export ANCHOR_WALLET=../deploy.json && ts-node ./cli/command.ts",
+    "ts-node": "ts-node ./cli/command.ts",
     "lint": "prettier */*.js \"*/**/*{.js,.ts}\" --check"
   },
   "dependencies": {

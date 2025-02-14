@@ -1,40 +1,33 @@
-import { Program, Wallet, web3 } from '@coral-xyz/anchor';
+import { Program, web3 } from '@coral-xyz/anchor';
 import * as anchor from '@coral-xyz/anchor';
 import fs from 'fs';
 import NodeWallet from '@coral-xyz/anchor/dist/cjs/nodewallet';
-import { PROGRAM_ID, TARGET_TOKEN_DECIMAL } from '../lib-presale/constant';
-import {
-  Connection,
-  Keypair,
-  LAMPORTS_PER_SOL,
-  PublicKey,
-  Transaction,
-} from '@solana/web3.js';
+import { Connection, Keypair, PublicKey, Transaction } from '@solana/web3.js';
 
 import IDL from '../target/idl/hybrid_dex.json';
 import {
+  cancelOrderTx,
   changeAdminTx,
-  createBuyWithSolTx,
-  createBuyWithUsdcTx,
-  createBuyWithUsdtTx,
+  closeMarketTx,
   createChangeConfigTx,
-  createClaimTokenTx,
-  createInitUserTx,
   createInitializeTx,
-  createSweepVaultFundsTx,
-  getGlobalKeys,
+  createMarketTx,
+  createOpenOrdersTx,
+  findAllMarkets,
   getGlobalState,
-  getUserState,
-} from '../lib-presale/scripts';
+  getMarketBookState,
+  getMarketState,
+  getUserMarketOrdersState,
+  placeOrderTx,
+  takeOrderTx,
+} from '../lib/scripts';
 import { HybridDex } from '../target/types/hybrid_dex';
+import { Side } from '../lib/types';
 
 let solConnection: Connection = null;
 let program: Program<HybridDex> = null;
 let provider: anchor.Provider = null;
 let payer: NodeWallet = null;
-
-// Address of the deployed program.
-let programId = new anchor.web3.PublicKey(PROGRAM_ID);
 
 /**
  * Set cluster, provider, program
@@ -61,7 +54,7 @@ export const setClusterConfig = async (
   const wallet = new NodeWallet(walletKeypair);
 
   // Configure the client to use the local cluster.
-  const provider = new anchor.AnchorProvider(solConnection, wallet, {
+  provider = new anchor.AnchorProvider(solConnection, wallet, {
     skipPreflight: false,
     commitment: 'confirmed',
   });
@@ -76,28 +69,18 @@ export const setClusterConfig = async (
 };
 
 /**
- * Initialize global pool, vault
+ * Initialize global pool
  */
 export const initProject = async (
-  minAmount: number,
-  maxAmount: number,
-  priceBySol: number,
-  priceByUsdt: number,
-  priceByUsdc: number,
-  startDate: number,
-  endDate: number
+  maxOrdersPerBook: number,
+  maxOrdersPerUser: number
 ) => {
   try {
     const tx = new Transaction().add(
       await createInitializeTx(
         payer.publicKey,
-        Math.floor(minAmount * TARGET_TOKEN_DECIMAL),
-        Math.floor(maxAmount * TARGET_TOKEN_DECIMAL),
-        Math.floor(priceBySol * LAMPORTS_PER_SOL),
-        Math.floor(priceByUsdt * 10 ** 6), // USDT decimal is 6
-        Math.floor(priceByUsdc * 10 ** 6), // USDC decimal is 6
-        startDate,
-        endDate,
+        maxOrdersPerBook,
+        maxOrdersPerUser,
         program
       )
     );
@@ -144,25 +127,15 @@ export const changeAdmin = async (newAdmin: string) => {
  * Change global config as admin
  */
 export const changeConfig = async (
-  minAmount: number | undefined,
-  maxAmount: number | undefined,
-  priceBySol: number | undefined,
-  priceByUsdt: number | undefined,
-  priceByUsdc: number | undefined,
-  startDate: number | undefined,
-  endDate: number | undefined
+  maxOrdersPerBook: number | undefined,
+  maxOrdersPerUser: number | undefined
 ) => {
   try {
     const tx = new Transaction().add(
       await createChangeConfigTx(
         payer.publicKey,
-        Math.floor(minAmount * TARGET_TOKEN_DECIMAL),
-        Math.floor(maxAmount * TARGET_TOKEN_DECIMAL),
-        Math.floor(priceBySol * LAMPORTS_PER_SOL),
-        Math.floor(priceByUsdt * 10 ** 6), // USDT decimal is 6
-        Math.floor(priceByUsdc * 10 ** 6), // USDC decimal is 6
-        startDate,
-        endDate,
+        maxOrdersPerBook,
+        maxOrdersPerUser,
         program
       )
     );
@@ -183,10 +156,20 @@ export const changeConfig = async (
 };
 
 /**
- * Sweep sol and usdt funds from vault as admin
+ * Create market
  */
-export const sweepVaultFunds = async () => {
-  const tx = await createSweepVaultFundsTx(payer.publicKey, program);
+export const createMarket = async (
+  baseMint: PublicKey,
+  quoteMint: PublicKey,
+  name: string
+) => {
+  const tx = await createMarketTx(
+    payer.publicKey,
+    baseMint,
+    quoteMint,
+    name,
+    program
+  );
 
   const txId = await provider.sendAndConfirm(tx, [], {
     commitment: 'confirmed',
@@ -196,11 +179,11 @@ export const sweepVaultFunds = async () => {
 };
 
 /**
- * Initialize user pool
+ * Close market with market owner authority or global admin authority
  */
-export const initializeUserPool = async () => {
+export const closeMarket = async (market: PublicKey) => {
   try {
-    const tx = await createInitUserTx(payer.publicKey, program);
+    const tx = await closeMarketTx(payer.publicKey, market, program);
 
     const txId = await provider.sendAndConfirm(tx, [], {
       commitment: 'confirmed',
@@ -212,12 +195,29 @@ export const initializeUserPool = async () => {
   }
 };
 
-export const buyWithSol = async (amount: number) => {
-  const tx = await createBuyWithSolTx(
+export const createOpenOrders = async (market: PublicKey) => {
+  const tx = await createOpenOrdersTx(payer.publicKey, market, program);
+
+  const txId = await provider.sendAndConfirm(tx, [], {
+    commitment: 'confirmed',
+  });
+
+  console.log('txHash: ', txId);
+};
+
+export const placeOrder = async (
+  market: PublicKey,
+  side: Side,
+  price: number,
+  quantity: number
+) => {
+  const tx = await placeOrderTx(
     payer.publicKey,
-    Math.floor(amount * TARGET_TOKEN_DECIMAL),
-    program,
-    solConnection
+    market,
+    side,
+    price,
+    quantity,
+    program
   );
 
   const txId = await provider.sendAndConfirm(tx, [], {
@@ -227,12 +227,17 @@ export const buyWithSol = async (amount: number) => {
   console.log('txHash: ', txId);
 };
 
-export const buyWithUsdt = async (amount: number) => {
-  const tx = await createBuyWithUsdtTx(
+export const cancelOrder = async (
+  market: PublicKey,
+  side: Side,
+  orderId: number
+) => {
+  const tx = await cancelOrderTx(
     payer.publicKey,
-    Math.floor(amount * TARGET_TOKEN_DECIMAL),
-    program,
-    solConnection
+    market,
+    side,
+    orderId,
+    program
   );
 
   const txId = await provider.sendAndConfirm(tx, [], {
@@ -242,12 +247,19 @@ export const buyWithUsdt = async (amount: number) => {
   console.log('txHash: ', txId);
 };
 
-export const buyWithUsdc = async (amount: number) => {
-  const tx = await createBuyWithUsdcTx(
+export const takeOrder = async (
+  market: PublicKey,
+  maker: PublicKey,
+  side: Side,
+  orderId: number
+) => {
+  const tx = await takeOrderTx(
     payer.publicKey,
-    Math.floor(amount * TARGET_TOKEN_DECIMAL),
-    program,
-    solConnection
+    maker,
+    market,
+    side,
+    orderId,
+    program
   );
 
   const txId = await provider.sendAndConfirm(tx, [], {
@@ -255,64 +267,98 @@ export const buyWithUsdc = async (amount: number) => {
   });
 
   console.log('txHash: ', txId);
-};
-
-export const claimToken = async () => {
-  const tx = await createClaimTokenTx(payer.publicKey, program, solConnection);
-
-  const txId = await provider.sendAndConfirm(tx, [], {
-    commitment: 'confirmed',
-  });
-
-  console.log('txHash: ', txId);
-};
-
-export const getUserInfo = async (user: PublicKey) => {
-  const { data, key } = await getUserState(user, program);
-  console.log('userPoolKey: ', key.toBase58());
-  console.log({
-    user: data.user.toBase58(),
-    buyAmount: data.buyAmount.toNumber(),
-    paidSol: data.paidSol.toNumber(),
-    paidUsdt: data.paidUsdt.toNumber(),
-    paidUsdc: data.paidUsdc.toNumber(),
-    buyDate: data.buyDate.toNumber(),
-    claimed: data.claimed,
-  });
 };
 
 export const getGlobalInfo = async () => {
   const { data, key } = await getGlobalState(program);
   console.log('global pool: ', key.toBase58());
 
-  const { targetTokenVault, solVault, usdcVault, usdtVault } =
-    await getGlobalKeys(program);
-
-  console.log(
-    'target vault:',
-    JSON.stringify(await solConnection.getTokenAccountBalance(targetTokenVault))
-  );
-  console.log(
-    'sol vault:',
-    (await solConnection.getBalance(solVault)) / LAMPORTS_PER_SOL
-  );
-  console.log(
-    'usdt vault:',
-    JSON.stringify(await solConnection.getTokenAccountBalance(usdtVault))
-  );
-  console.log(
-    'usdc vault:',
-    JSON.stringify(await solConnection.getTokenAccountBalance(usdcVault))
-  );
-
   return {
     admin: data.admin.toBase58(),
-    minAmount: data.minAmount.toNumber(),
-    maxAmount: data.maxAmount.toNumber(),
-    priceBySol: data.priceBySol.toNumber(),
-    priceByUsdt: data.priceByUsdt.toNumber(),
-    priceByUsdc: data.priceByUsdc.toNumber(),
-    startDate: data.startDate.toNumber(),
-    endDate: data.endDate.toNumber(),
+    maxOrdersPerUser: data.maxOrdersPerUser.toNumber(),
+    maxOrdersPerBook: data.maxOrdersPerBook.toNumber(),
+    totalMarketCount: data.totalMarketCount.toNumber(),
+    marketSeqNum: data.marketSeqNum.toNumber(),
+  };
+};
+
+export const getMarketInfo = async (market: PublicKey) => {
+  const { data, key } = await getMarketState(market, program);
+  console.log('market info: ', key.toBase58());
+
+  return {
+    seed: data.seed.toNumber(),
+    name: Buffer.from(data.name)
+      .filter((buf) => buf !== 0x0)
+      .toString(),
+    marketAuthority: data.marketAuthority.toBase58(),
+    baseMint: data.baseMint.toBase58(),
+    quoteMint: data.quoteMint.toBase58(),
+    baseDecimal: data.baseDecimal,
+    quoteDecimal: data.quoteDecimal,
+    bids: data.bids.toBase58(),
+    asks: data.asks.toBase58(),
+    createdAt: data.createdAt.toNumber(),
+    baseTotalVolume: data.baseTotalVolume.toNumber(),
+    quoteTotalVolume: data.quoteTotalVolume.toNumber(),
+    orderSeqNum: data.orderSeqNum.toNumber(),
+  };
+};
+
+export const getAllMarkets = async ({
+  base,
+  quote,
+}: {
+  base?: PublicKey;
+  quote?: PublicKey;
+}) => {
+  const data = await findAllMarkets({ base, quote }, program);
+  return data;
+};
+
+export const getUserOrdersInfo = async (market: PublicKey, user: PublicKey) => {
+  const { data, key } = await getUserMarketOrdersState(market, user, program);
+  console.log('user orders: ', key.toBase58());
+
+  return {
+    address: data.address.toBase58(),
+    market: data.market.toBase58(),
+    openedOrdersCount: data.openedOrdersCount.toNumber(),
+    baseDepositTotal: data.baseDepositTotal.toNumber(),
+    quoteDepositTotal: data.quoteDepositTotal.toNumber(),
+    baseTotalVolume: data.baseTotalVolume.toNumber(),
+    quoteTotalVolume: data.quoteTotalVolume.toNumber(),
+  };
+};
+
+export const getOrderBooksInfo = async (market: PublicKey) => {
+  const { bids, asks, key } = await getMarketBookState(market, program);
+  console.log('market: ', key.toBase58());
+
+  return {
+    bids: {
+      side: bids.side,
+      market: bids.market.toBase58(),
+      ordersCount: bids.ordersCount.toNumber(),
+      orders: bids.orders.map((order) => ({
+        orderId: order.orderId.toNumber(),
+        owner: order.owner.toBase58(),
+        price: order.price.toNumber(),
+        quantity: order.quantity.toNumber(),
+        createdAt: order.createdAt.toNumber(),
+      })),
+    },
+    asks: {
+      side: asks.side,
+      market: asks.market.toBase58(),
+      ordersCount: asks.ordersCount.toNumber(),
+      orders: asks.orders.map((order) => ({
+        orderId: order.orderId.toNumber(),
+        owner: order.owner.toBase58(),
+        price: order.price.toNumber(),
+        quantity: order.quantity.toNumber(),
+        createdAt: order.createdAt.toNumber(),
+      })),
+    },
   };
 };

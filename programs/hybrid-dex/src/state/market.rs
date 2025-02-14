@@ -13,7 +13,7 @@ pub struct Market {
     pub quote_decimal: u8,
     pub bids: Pubkey,
     pub asks: Pubkey,
-    pub create_at: i64,
+    pub created_at: i64,
     pub base_total_volume: u64,
     pub quote_total_volume: u64,
     pub order_seq_num: u64,
@@ -33,7 +33,7 @@ impl Default for Market {
             quote_decimal: 0,
             bids: Pubkey::default(),
             asks: Pubkey::default(),
-            create_at: 0,
+            created_at: 0,
             base_total_volume: 0,
             quote_total_volume: 0,
             order_seq_num: 0,
@@ -83,33 +83,50 @@ impl Book {
     }
 
     pub fn insert_order(&mut self, new_order: OpenedOrder) {
-        if self.side == Side::Bid {
-            let idx: usize = 0;
-            for idx in 0..self.orders_count as usize {
+        let idx: usize = 0;
+        for idx in 0..self.orders_count as usize {
+            if idx != self.orders_count as usize && self.side == Side::Bid {
                 if self.orders[idx].price > new_order.price {
                     break;
                 }
-            }
-            self.orders.insert(idx, new_order);
-        } else {
-            let idx: usize = 0;
-            for idx in 0..self.orders_count as usize {
+            } else if idx != self.orders_count as usize && self.side == Side::Ask {
                 if self.orders[idx].price < new_order.price {
                     break;
                 }
             }
+        }
+        if idx == self.orders_count as usize {
+            if self.orders.len() == self.orders_count as usize {
+                self.orders.push(new_order);
+            } else {
+                self.orders[idx] = new_order;
+            }
+        } else {
             self.orders.insert(idx, new_order);
         }
     }
 
     pub fn remove_order(&mut self, order_id: u64) -> Result<OpenedOrder> {
-        match self
-            .orders
-            .iter()
-            .find(|&&order| order.order_id == order_id)
-        {
-            Some(order) => return Ok(order.to_owned()),
-            None => return Err(HybridDexError::OrderNotFound.into()),
+        if self.orders_count == 0 {
+            return Err(HybridDexError::OrderNotFound.into());
+        } else {
+            let idx: usize = 0;
+            for idx in 0..self.orders_count as usize {
+                if idx != self.orders_count as usize && self.orders[idx].order_id == order_id {
+                    break;
+                } else if idx != self.orders_count as usize && self.orders[idx].order_id == order_id
+                {
+                    break;
+                }
+            }
+            if idx == self.orders_count as usize - 1 {
+                return Ok(self.orders[idx].to_owned());
+            } else if idx == self.orders_count as usize {
+                return Err(HybridDexError::OrderNotFound.into());
+            } else {
+                let order = self.orders.remove(idx);
+                Ok(order)
+            }
         }
     }
 }

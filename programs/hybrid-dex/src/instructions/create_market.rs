@@ -65,7 +65,7 @@ impl CreateMarket<'_> {
         market.base_decimal = ctx.accounts.base_mint.decimals;
         market.quote_decimal = ctx.accounts.quote_mint.decimals;
 
-        market.create_at = Clock::get().unwrap().unix_timestamp;
+        market.created_at = Clock::get().unwrap().unix_timestamp;
 
         market.bids = bids_book.key();
         market.asks = asks_book.key();

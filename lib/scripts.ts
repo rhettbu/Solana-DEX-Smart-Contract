@@ -21,7 +21,7 @@ import {
   USER_MARKET_ORDER_SEED,
 } from './constant';
 import { HybridDex } from '../target/types/hybrid_dex';
-import { serializeSide, Side } from './types';
+import { Market, MARKET_SIZE, serializeSide, Side } from './types';
 
 export const createInitializeTx = async (
   admin: PublicKey,
@@ -47,9 +47,6 @@ export const createInitializeTx = async (
     )
     .accounts({
       admin,
-      globalPool,
-      systemProgram: SystemProgram.programId,
-      rent: SYSVAR_RENT_PUBKEY,
     })
     .transaction();
 
@@ -118,30 +115,13 @@ export const createMarketTx = async (
   name: string,
   program: anchor.Program<HybridDex>
 ) => {
-  const [globalPool] = PublicKey.findProgramAddressSync(
-    [Buffer.from(GLOBAL_AUTHORITY_SEED)],
-    program.programId
-  );
-
   const { data } = await getGlobalState(program);
 
   const [market] = PublicKey.findProgramAddressSync(
-    [Buffer.from(MARKET_SEED), data.marketSeqNum.toArrayLike(Buffer, 'le', 4)],
+    [Buffer.from(MARKET_SEED), data.marketSeqNum.toArrayLike(Buffer, 'le', 8)],
     program.programId
   );
   console.log(data.marketSeqNum.toNumber(), 'market: ', market.toBase58());
-
-  const [bidsBook] = PublicKey.findProgramAddressSync(
-    [Buffer.from(BID_BOOK_SEED), market.toBuffer()],
-    program.programId
-  );
-  console.log('bids book: ', bidsBook.toBase58());
-
-  const [asksBook] = PublicKey.findProgramAddressSync(
-    [Buffer.from(ASK_BOOK_SEED), market.toBuffer()],
-    program.programId
-  );
-  console.log('asks book: ', asksBook.toBase58());
 
   const tx = new Transaction();
 
@@ -149,14 +129,8 @@ export const createMarketTx = async (
     .createMarket(name)
     .accounts({
       authority,
-      globalPool,
-      market,
       baseMint,
       quoteMint,
-      bidsBook,
-      asksBook,
-      systemProgram: SystemProgram.programId,
-      rent: SYSVAR_RENT_PUBKEY,
     })
     .transaction();
 
@@ -173,37 +147,13 @@ export const closeMarketTx = async (
   market: PublicKey,
   program: anchor.Program<HybridDex>
 ) => {
-  const [globalPool] = PublicKey.findProgramAddressSync(
-    [Buffer.from(GLOBAL_AUTHORITY_SEED)],
-    program.programId
-  );
   const { data } = await getMarketState(market, program);
   console.log('market seed', data.seed);
-
-  const [bidsBook] = PublicKey.findProgramAddressSync(
-    [Buffer.from(BID_BOOK_SEED), market.toBuffer()],
-    program.programId
-  );
-  console.log('bids book: ', bidsBook.toBase58());
-
-  const [asksBook] = PublicKey.findProgramAddressSync(
-    [Buffer.from(ASK_BOOK_SEED), market.toBuffer()],
-    program.programId
-  );
-  console.log('asks book: ', asksBook.toBase58());
 
   const tx = await program.methods
     .closeMarket(new anchor.BN(data.seed))
     .accounts({
       authority,
-      globalPool,
-      market,
-      baseMint: data.baseMint,
-      quoteMint: data.quoteMint,
-      bidsBook,
-      asksBook,
-      systemProgram: SystemProgram.programId,
-      rent: SYSVAR_RENT_PUBKEY,
     })
     .transaction();
 
@@ -215,11 +165,6 @@ export const createOpenOrdersTx = async (
   market: PublicKey,
   program: anchor.Program<HybridDex>
 ) => {
-  const [userOpenOrders] = PublicKey.findProgramAddressSync(
-    [Buffer.from(USER_MARKET_ORDER_SEED), market.toBuffer(), user.toBytes()],
-    program.programId
-  );
-
   const tx = new Transaction();
 
   const txId = await program.methods
@@ -227,9 +172,6 @@ export const createOpenOrdersTx = async (
     .accounts({
       user,
       market,
-      userOpenOrders,
-      systemProgram: SystemProgram.programId,
-      rent: SYSVAR_RENT_PUBKEY,
     })
     .transaction();
 
@@ -238,268 +180,118 @@ export const createOpenOrdersTx = async (
   return tx;
 };
 
-/// TODO: complete ix args
 export const placeOrderTx = async (
   maker: PublicKey,
   market: PublicKey,
   side: Side,
-  price: number,
-  quantity: number,
+  price: number, // should have base decimal value
+  quantity: number, // should have quote / base decimal
   program: anchor.Program<HybridDex>
 ) => {
-  const [globalPool] = PublicKey.findProgramAddressSync(
-    [Buffer.from(GLOBAL_AUTHORITY_SEED)],
-    program.programId
-  );
+  if (side === Side.Bid) {
+    const tx = new Transaction();
+    const txId = await program.methods
+      .placeBuyOrder(new anchor.BN(price), new anchor.BN(quantity))
+      .accounts({
+        maker,
+        // @ts-ignore
+        market,
+      })
+      .transaction();
 
-  const { data } = await getMarketState(market, program);
+    tx.add(txId);
 
-  const [userOpenOrders] = PublicKey.findProgramAddressSync(
-    [Buffer.from(USER_MARKET_ORDER_SEED), market.toBuffer(), maker.toBytes()],
-    program.programId
-  );
+    return tx;
+  } else {
+    const tx = new Transaction();
+    const txId = await program.methods
+      .placeSellOrder(new anchor.BN(price), new anchor.BN(quantity))
+      .accounts({
+        maker,
+        // @ts-ignore
+        market,
+      })
+      .transaction();
 
-  const [bidsBook] = PublicKey.findProgramAddressSync(
-    [Buffer.from(BID_BOOK_SEED), market.toBuffer()],
-    program.programId
-  );
-  console.log('bids book: ', bidsBook.toBase58());
+    tx.add(txId);
 
-  const [asksBook] = PublicKey.findProgramAddressSync(
-    [Buffer.from(ASK_BOOK_SEED), market.toBuffer()],
-    program.programId
-  );
-  console.log('asks book: ', asksBook.toBase58());
-
-  const userBaseTokenAccount = await getAssociatedTokenAccount(
-    maker,
-    data.baseMint
-  );
-  console.log('userBaseTokenAccount: ', userBaseTokenAccount.toBase58());
-  const userQuoteTokenAccount = await getAssociatedTokenAccount(
-    maker,
-    data.quoteMint
-  );
-  console.log('userQuoteTokenAccount: ', userQuoteTokenAccount.toBase58());
-
-  const baseVaultAccount = await getAssociatedTokenAccount(
-    market,
-    data.baseMint
-  );
-  console.log('baseVaultAccount: ', baseVaultAccount.toBase58());
-  const quoteVaultAccount = await getAssociatedTokenAccount(
-    market,
-    data.baseMint
-  );
-  console.log('quoteVaultAccount: ', quoteVaultAccount.toBase58());
-
-  const tx = new Transaction();
-
-  const txId = await program.methods
-    .placeOrder(
-      side,
-      new anchor.BN(price),
-      new anchor.BN(quantity)
-    )
-    .accounts({
-      maker,
-      globalPool,
-      market,
-      userOpenOrders,
-      baseMint: data.baseMint,
-      quoteMint: data.quoteMint,
-      userBaseTokenAccount,
-      userQuoteTokenAccount,
-      baseVaultAccount,
-      quoteVaultAccount,
-      bidsBook,
-      asksBook,
-      associatedTokenProgram: ASSOCIATED_TOKEN_PROGRAM_ID,
-      tokenProgram: TOKEN_PROGRAM_ID,
-      systemProgram: SystemProgram.programId,
-      rent: SYSVAR_RENT_PUBKEY,
-    })
-    .transaction();
-
-  tx.add(txId);
-
-  return tx;
+    return tx;
+  }
 };
 
-/// TODO: complete whole
 export const cancelOrderTx = async (
   maker: PublicKey,
   market: PublicKey,
   side: Side,
-  price: number,
-  quantity: number,
+  orderId: number,
   program: anchor.Program<HybridDex>
 ) => {
-  const [globalPool] = PublicKey.findProgramAddressSync(
-    [Buffer.from(GLOBAL_AUTHORITY_SEED)],
-    program.programId
-  );
-
   const { data } = await getMarketState(market, program);
 
-  const [userOpenOrders] = PublicKey.findProgramAddressSync(
-    [Buffer.from(USER_MARKET_ORDER_SEED), market.toBuffer(), maker.toBytes()],
-    program.programId
-  );
+  if (side === Side.Bid) {
+    const tx = new Transaction();
 
-  const [bidsBook] = PublicKey.findProgramAddressSync(
-    [Buffer.from(BID_BOOK_SEED), market.toBuffer()],
-    program.programId
-  );
-  console.log('bids book: ', bidsBook.toBase58());
+    const txId = await program.methods
+      .cancelBuyOrder(new anchor.BN(data.seed), new anchor.BN(orderId))
+      .accounts({ maker })
+      .transaction();
 
-  const [asksBook] = PublicKey.findProgramAddressSync(
-    [Buffer.from(ASK_BOOK_SEED), market.toBuffer()],
-    program.programId
-  );
-  console.log('asks book: ', asksBook.toBase58());
+    tx.add(txId);
 
-  const userBaseTokenAccount = await getAssociatedTokenAccount(
-    maker,
-    data.baseMint
-  );
-  console.log('userBaseTokenAccount: ', userBaseTokenAccount.toBase58());
-  const userQuoteTokenAccount = await getAssociatedTokenAccount(
-    maker,
-    data.quoteMint
-  );
-  console.log('userQuoteTokenAccount: ', userQuoteTokenAccount.toBase58());
+    return tx;
+  } else {
+    const tx = new Transaction();
 
-  const baseVaultAccount = await getAssociatedTokenAccount(
-    market,
-    data.baseMint
-  );
-  console.log('baseVaultAccount: ', baseVaultAccount.toBase58());
-  const quoteVaultAccount = await getAssociatedTokenAccount(
-    market,
-    data.baseMint
-  );
-  console.log('quoteVaultAccount: ', quoteVaultAccount.toBase58());
+    const txId = await program.methods
+      .cancelSellOrder(new anchor.BN(data.seed), new anchor.BN(orderId))
+      .accounts({ maker })
+      .transaction();
 
-  const tx = new Transaction();
+    tx.add(txId);
 
-  const txId = await program.methods
-    .placeOrder(
-      side,
-      new anchor.BN(price),
-      new anchor.BN(quantity)
-    )
-    .accounts({
-      maker,
-      globalPool,
-      market,
-      userOpenOrders,
-      baseMint: data.baseMint,
-      quoteMint: data.quoteMint,
-      userBaseTokenAccount,
-      userQuoteTokenAccount,
-      baseVaultAccount,
-      quoteVaultAccount,
-      bidsBook,
-      asksBook,
-      associatedTokenProgram: ASSOCIATED_TOKEN_PROGRAM_ID,
-      tokenProgram: TOKEN_PROGRAM_ID,
-      systemProgram: SystemProgram.programId,
-      rent: SYSVAR_RENT_PUBKEY,
-    })
-    .transaction();
-
-  tx.add(txId);
-
-  return tx;
+    return tx;
+  }
 };
 
-/// TODO: complete whole ix
 export const takeOrderTx = async (
+  taker: PublicKey,
   maker: PublicKey,
   market: PublicKey,
   side: Side,
-  price: number,
-  quantity: number,
+  orderId: number,
   program: anchor.Program<HybridDex>
 ) => {
-  const [globalPool] = PublicKey.findProgramAddressSync(
-    [Buffer.from(GLOBAL_AUTHORITY_SEED)],
-    program.programId
-  );
-
   const { data } = await getMarketState(market, program);
 
-  const [userOpenOrders] = PublicKey.findProgramAddressSync(
-    [Buffer.from(USER_MARKET_ORDER_SEED), market.toBuffer(), maker.toBytes()],
-    program.programId
-  );
+  if (side === Side.Bid) {
+    const tx = new Transaction();
 
-  const [bidsBook] = PublicKey.findProgramAddressSync(
-    [Buffer.from(BID_BOOK_SEED), market.toBuffer()],
-    program.programId
-  );
-  console.log('bids book: ', bidsBook.toBase58());
+    const txId = await program.methods
+      .takeBuyOrder(new anchor.BN(data.seed), new anchor.BN(orderId))
+      .accounts({
+        taker,
+        maker,
+      })
+      .transaction();
 
-  const [asksBook] = PublicKey.findProgramAddressSync(
-    [Buffer.from(ASK_BOOK_SEED), market.toBuffer()],
-    program.programId
-  );
-  console.log('asks book: ', asksBook.toBase58());
+    tx.add(txId);
 
-  const userBaseTokenAccount = await getAssociatedTokenAccount(
-    maker,
-    data.baseMint
-  );
-  console.log('userBaseTokenAccount: ', userBaseTokenAccount.toBase58());
-  const userQuoteTokenAccount = await getAssociatedTokenAccount(
-    maker,
-    data.quoteMint
-  );
-  console.log('userQuoteTokenAccount: ', userQuoteTokenAccount.toBase58());
+    return tx;
+  } else {
+    const tx = new Transaction();
 
-  const baseVaultAccount = await getAssociatedTokenAccount(
-    market,
-    data.baseMint
-  );
-  console.log('baseVaultAccount: ', baseVaultAccount.toBase58());
-  const quoteVaultAccount = await getAssociatedTokenAccount(
-    market,
-    data.baseMint
-  );
-  console.log('quoteVaultAccount: ', quoteVaultAccount.toBase58());
+    const txId = await program.methods
+      .takeSellOrder(new anchor.BN(data.seed), new anchor.BN(orderId))
+      .accounts({
+        taker,
+        maker,
+      })
+      .transaction();
 
-  const tx = new Transaction();
+    tx.add(txId);
 
-  const txId = await program.methods
-    .placeOrder(
-      side,
-      new anchor.BN(price),
-      new anchor.BN(quantity)
-    )
-    .accounts({
-      maker,
-      globalPool,
-      market,
-      userOpenOrders,
-      baseMint: data.baseMint,
-      quoteMint: data.quoteMint,
-      userBaseTokenAccount,
-      userQuoteTokenAccount,
-      baseVaultAccount,
-      quoteVaultAccount,
-      bidsBook,
-      asksBook,
-      associatedTokenProgram: ASSOCIATED_TOKEN_PROGRAM_ID,
-      tokenProgram: TOKEN_PROGRAM_ID,
-      systemProgram: SystemProgram.programId,
-      rent: SYSVAR_RENT_PUBKEY,
-    })
-    .transaction();
-
-  tx.add(txId);
-
-  return tx;
+    return tx;
+  }
 };
 
 /**
@@ -552,20 +344,80 @@ export const getMarketState = async (
   }
 };
 
+export const findAllMarkets = async (
+  { base, quote }: { base?: PublicKey; quote?: PublicKey },
+  program: anchor.Program<HybridDex>
+) => {
+  let filters: anchor.web3.GetProgramAccountsFilter[] = [
+    {
+      dataSize: MARKET_SIZE,
+    },
+  ];
+
+  if (base) {
+    filters.push({
+      memcmp: { offset: 64, bytes: base.toBase58() },
+    });
+  }
+
+  if (quote) {
+    filters.push({
+      memcmp: { offset: 96, bytes: quote.toBase58() },
+    });
+  }
+
+  const marketAccs = await program.provider.connection.getProgramAccounts(
+    program.programId,
+    { filters, encoding: 'base64' }
+  );
+
+  return marketAccs.map((marketAcc) => {
+    let data: any = program.coder.accounts.decode<Market>(
+      'market',
+      marketAcc.account.data
+    );
+    data.seed = data.seed.toNumber();
+    data.name = Buffer.from(data.name)
+      .filter((buf) => buf !== 0x0)
+      .toString();
+    data.marketAuthority = data.marketAuthority.toBase58();
+    data.baseMint = data.baseMint.toBase58();
+    data.quoteMint = data.quoteMint.toBase58();
+    data.baseDecimal = data.baseDecimal;
+    data.quoteDecimal = data.quoteDecimal;
+    data.bids = data.bids.toBase58();
+    data.asks = data.asks.toBase58();
+    data.createdAt = data.createdAt.toNumber();
+    data.baseTotalVolume = data.baseTotalVolume.toNumber();
+    data.quoteTotalVolume = data.quoteTotalVolume.toNumber();
+    data.orderSeqNum = data.orderSeqNum.toNumber();
+    return {
+      key: marketAcc.pubkey.toBase58(),
+      data,
+    };
+  });
+};
+
 /**
  * Fetch user market orders PDA data
  */
-//// TODO:
 export const getUserMarketOrdersState = async (
   market: PublicKey,
+  user: PublicKey,
   program: anchor.Program<HybridDex>
 ) => {
+  const [userOrders] = PublicKey.findProgramAddressSync(
+    [Buffer.from(USER_MARKET_ORDER_SEED), market.toBuffer(), user.toBuffer()],
+    program.programId
+  );
   try {
-    let marketData = await program.account.market.fetch(market);
+    let userOrdersData = await program.account.userMarketOrders.fetch(
+      userOrders
+    );
 
     return {
       key: market,
-      data: marketData,
+      data: userOrdersData,
     };
   } catch (e) {
     console.error(e);
@@ -580,24 +432,38 @@ export const getUserMarketOrdersState = async (
 /**
  * Fetch market order book PDA data
  */
-//// TODO:
 export const getMarketBookState = async (
   market: PublicKey,
   program: anchor.Program<HybridDex>
 ) => {
   try {
-    let marketData = await program.account.market.fetch(market);
+    const [bidsBook] = PublicKey.findProgramAddressSync(
+      [Buffer.from(BID_BOOK_SEED), market.toBuffer()],
+      program.programId
+    );
+    console.log('bids book: ', bidsBook.toBase58());
+
+    const [asksBook] = PublicKey.findProgramAddressSync(
+      [Buffer.from(ASK_BOOK_SEED), market.toBuffer()],
+      program.programId
+    );
+    console.log('asks book: ', asksBook.toBase58());
+
+    let bidsBookData = await program.account.book.fetch(bidsBook);
+    let asksBookData = await program.account.book.fetch(asksBook);
 
     return {
       key: market,
-      data: marketData,
+      bids: bidsBookData,
+      asks: asksBookData,
     };
   } catch (e) {
     console.error(e);
 
     return {
       key: market,
-      data: null,
+      bids: null,
+      asks: null,
     };
   }
 };

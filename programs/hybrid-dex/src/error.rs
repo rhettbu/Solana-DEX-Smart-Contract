@@ -20,11 +20,11 @@ pub enum HybridDexError {
     InsufficientWithdrawBalance,
     #[msg("Not found order id from market order book")]
     OrderNotFound,
+    #[msg("Order maker address not matched with passed maker")]
+    IncorrectMakerAddress,
 
     #[msg("Target token mint incorrect")]
     InvalidTokenMint,
-    #[msg("Requested amount to buy is not in range of min & max")]
-    InvalidRequestAmountRange,
     #[msg("Unable to withdraw or sweep before presale period ends")]
     PresaleNotFinished,
     #[msg("Already purchased token")]
