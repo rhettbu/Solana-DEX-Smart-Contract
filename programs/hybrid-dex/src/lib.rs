@@ -108,4 +108,24 @@ pub mod hybrid_dex {
     ) -> Result<()> {
         TakeSellOrder::process_instruction(&mut ctx, seed, order_id)
     }
+
+    /** Take buy order partially as taker */
+    pub fn partial_take_buy_order(
+        mut ctx: Context<PartialTakeBuyOrder>,
+        seed: u64,
+        order_id: u64,
+        amount: u64,
+    ) -> Result<()> {
+        PartialTakeBuyOrder::process_instruction(&mut ctx, seed, order_id, amount)
+    }
+
+    /** Take sell order partially as taker */
+    pub fn partial_take_sell_order(
+        mut ctx: Context<PartialTakeSellOrder>,
+        seed: u64,
+        order_id: u64,
+        amount: u64,
+    ) -> Result<()> {
+        PartialTakeSellOrder::process_instruction(&mut ctx, seed, order_id, amount)
+    }
 }

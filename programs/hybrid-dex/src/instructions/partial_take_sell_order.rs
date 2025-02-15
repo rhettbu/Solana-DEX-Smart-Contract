@@ -7,7 +7,7 @@ use crate::*;
 
 #[derive(Accounts)]
 #[instruction(seed: u64)]
-pub struct TakeSellOrder<'info> {
+pub struct PartialTakeSellOrder<'info> {
     #[account(mut)]
     pub taker: Signer<'info>,
 
@@ -87,14 +87,19 @@ pub struct TakeSellOrder<'info> {
     pub rent: Sysvar<'info, Rent>,
 }
 
-impl TakeSellOrder<'_> {
-    pub fn process_instruction(ctx: &mut Context<Self>, seed: u64, order_id: u64) -> Result<()> {
+impl PartialTakeSellOrder<'_> {
+    pub fn process_instruction(
+        ctx: &mut Context<Self>,
+        seed: u64,
+        order_id: u64,
+        amount: u64,
+    ) -> Result<()> {
         let market = &mut ctx.accounts.market;
         let maker_open_orders = &mut ctx.accounts.maker_open_orders;
         let taker_open_orders = &mut ctx.accounts.taker_open_orders;
 
         let asks_book = &mut ctx.accounts.asks_book;
-        let order = asks_book.remove_order(order_id)?;
+        let order = asks_book.decrease_order(order_id, amount)?;
 
         // check maker address against order id
         require!(
@@ -103,12 +108,12 @@ impl TakeSellOrder<'_> {
         );
 
         // price should have quote_decimal value
-        let quote_amount = (order.quantity as u128 * order.price as u128
+        let quote_amount = (amount as u128 * order.price as u128
             / ((10 as u128).pow(market.base_decimal as u32))) as u64;
 
         // check base token vault balance
         require!(
-            ctx.accounts.base_vault_account.amount >= order.quantity,
+            ctx.accounts.base_vault_account.amount >= amount,
             HybridDexError::InsufficientWithdrawBalance
         );
 
@@ -118,17 +123,14 @@ impl TakeSellOrder<'_> {
             HybridDexError::InsufficientDepositBalance
         );
 
-        asks_book.orders_count -= 1;
-
-        maker_open_orders.opened_orders_count -= 1;
-        maker_open_orders.base_deposit_total -= order.quantity;
-        maker_open_orders.base_total_volume += order.quantity;
+        maker_open_orders.base_deposit_total -= amount;
+        maker_open_orders.base_total_volume += amount;
         maker_open_orders.quote_total_volume += quote_amount;
 
-        taker_open_orders.base_total_volume += order.quantity;
+        taker_open_orders.base_total_volume += amount;
         taker_open_orders.quote_total_volume += quote_amount;
 
-        market.base_total_volume += order.quantity;
+        market.base_total_volume += amount;
         market.quote_total_volume += quote_amount;
 
         let seed_bytes = seed.to_le_bytes();
@@ -148,7 +150,7 @@ impl TakeSellOrder<'_> {
                 cpi_accounts,
                 signers_seeds,
             ),
-            order.quantity,
+            amount,
         )?;
 
         // transfer quote token from taker to maker

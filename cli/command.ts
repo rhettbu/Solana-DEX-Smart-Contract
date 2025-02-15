@@ -16,6 +16,7 @@ import {
   getUserOrdersInfo,
   getOrderBooksInfo,
   getAllMarkets,
+  partialTakeOrder,
 } from './scripts';
 import { sideFromStr } from '../lib/types';
 
@@ -36,8 +37,8 @@ programCommand('status')
 
 programCommand('init')
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  .requiredOption('-opb, --order_per_book <number>')
   .requiredOption('-opu, --order_per_user <number>')
+  .requiredOption('-opb, --order_per_book <number>')
   .action(async (directory, cmd) => {
     const { env, keypair, rpc, order_per_book, order_per_user } = cmd.opts();
 
@@ -47,7 +48,7 @@ programCommand('init')
 
     await setClusterConfig(env, keypair, rpc);
 
-    await initProject(Number(order_per_book), Number(order_per_user));
+    await initProject(Number(order_per_user), Number(order_per_book));
   });
 
 programCommand('change-admin')
@@ -67,8 +68,8 @@ programCommand('change-admin')
 
 programCommand('change-config')
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  .option('-opb, --order_per_book <number>')
   .option('-opu, --order_per_user <number>')
+  .option('-opb, --order_per_book <number>')
   .action(async (directory, cmd) => {
     const { env, keypair, rpc, order_per_book, order_per_user } = cmd.opts();
 
@@ -79,8 +80,8 @@ programCommand('change-config')
     await setClusterConfig(env, keypair, rpc);
 
     await changeConfig(
-      order_per_book ? Number(order_per_book) : undefined,
-      order_per_user ? Number(order_per_user) : undefined
+      order_per_user ? Number(order_per_user) : undefined,
+      order_per_book ? Number(order_per_book) : undefined
     );
   });
 
@@ -198,6 +199,32 @@ programCommand('take-order')
       new PublicKey(maker),
       sideFromStr(side),
       Number(order_id)
+    );
+  });
+
+programCommand('partial-take-order')
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  .requiredOption('-m, --market <string>')
+  .requiredOption('-a, --maker <string>')
+  .requiredOption('-s, --side <string>')
+  .requiredOption('-o, --order_id <number>')
+  .requiredOption('-q, --quantity <number>')
+  .action(async (directory, cmd) => {
+    const { env, keypair, rpc, market, maker, side, order_id, quantity } =
+      cmd.opts();
+
+    console.log('Solana Cluster:', env);
+    console.log('Keypair Path:', keypair);
+    console.log('RPC URL:', rpc);
+
+    await setClusterConfig(env, keypair, rpc);
+
+    await partialTakeOrder(
+      new PublicKey(market),
+      new PublicKey(maker),
+      sideFromStr(side),
+      Number(order_id),
+      Number(quantity)
     );
   });
 

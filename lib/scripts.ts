@@ -282,6 +282,56 @@ export const takeOrderTx = async (
   }
 };
 
+export const partialTakeOrderTx = async (
+  taker: PublicKey,
+  maker: PublicKey,
+  market: PublicKey,
+  side: Side,
+  orderId: number,
+  amount: number,
+  program: anchor.Program<HybridDex>
+) => {
+  const { data } = await getMarketState(market, program);
+
+  if (side === Side.Bid) {
+    const tx = new Transaction();
+
+    const txId = await program.methods
+      .partialTakeBuyOrder(
+        new anchor.BN(data.seed),
+        new anchor.BN(orderId),
+        new anchor.BN(amount)
+      )
+      .accounts({
+        taker,
+        maker,
+      })
+      .transaction();
+
+    tx.add(txId);
+
+    return tx;
+  } else {
+    const tx = new Transaction();
+
+    const txId = await program.methods
+      .partialTakeSellOrder(
+        new anchor.BN(data.seed),
+        new anchor.BN(orderId),
+        new anchor.BN(amount)
+      )
+      .accounts({
+        taker,
+        maker,
+      })
+      .transaction();
+
+    tx.add(txId);
+
+    return tx;
+  }
+};
+
 /**
  * Fetch global pool PDA data
  */

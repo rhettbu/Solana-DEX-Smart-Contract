@@ -7,7 +7,7 @@ use crate::*;
 
 #[derive(Accounts)]
 #[instruction(seed: u64)]
-pub struct TakeSellOrder<'info> {
+pub struct PartialTakeBuyOrder<'info> {
     #[account(mut)]
     pub taker: Signer<'info>,
 
@@ -46,40 +46,40 @@ pub struct TakeSellOrder<'info> {
 
     #[account(
         init_if_needed,
-        associated_token::mint = quote_mint,
+        associated_token::mint = base_mint,
         associated_token::authority = maker,
         payer = taker,
     )]
-    pub maker_quote_token_account: Box<Account<'info, TokenAccount>>,
+    pub maker_base_token_account: Box<Account<'info, TokenAccount>>,
 
     #[account(
-        init_if_needed,
+        mut,
         associated_token::mint = base_mint,
         associated_token::authority = taker,
-        payer = taker,
     )]
     pub taker_base_token_account: Box<Account<'info, TokenAccount>>,
 
     #[account(
-        mut,
+        init_if_needed,
         associated_token::mint = quote_mint,
         associated_token::authority = taker,
+        payer = taker,
     )]
     pub taker_quote_token_account: Box<Account<'info, TokenAccount>>,
 
     #[account(
         mut,
-        associated_token::mint = base_mint,
+        associated_token::mint = quote_mint,
         associated_token::authority = market,
     )]
-    pub base_vault_account: Box<Account<'info, TokenAccount>>,
+    pub quote_vault_account: Box<Account<'info, TokenAccount>>,
 
     #[account(
         mut,
-        seeds = [ASK_BOOK_SEED.as_bytes(), market.key().as_ref()],
+        seeds = [BID_BOOK_SEED.as_bytes(), market.key().as_ref()],
         bump,
     )]
-    pub asks_book: Box<Account<'info, Book>>,
+    pub bids_book: Box<Account<'info, Book>>,
 
     pub associated_token_program: Program<'info, AssociatedToken>,
     pub token_program: Program<'info, Token>,
@@ -87,14 +87,19 @@ pub struct TakeSellOrder<'info> {
     pub rent: Sysvar<'info, Rent>,
 }
 
-impl TakeSellOrder<'_> {
-    pub fn process_instruction(ctx: &mut Context<Self>, seed: u64, order_id: u64) -> Result<()> {
+impl PartialTakeBuyOrder<'_> {
+    pub fn process_instruction(
+        ctx: &mut Context<Self>,
+        seed: u64,
+        order_id: u64,
+        amount: u64,
+    ) -> Result<()> {
         let market = &mut ctx.accounts.market;
         let maker_open_orders = &mut ctx.accounts.maker_open_orders;
         let taker_open_orders = &mut ctx.accounts.taker_open_orders;
 
-        let asks_book = &mut ctx.accounts.asks_book;
-        let order = asks_book.remove_order(order_id)?;
+        let bids_book = &mut ctx.accounts.bids_book;
+        let order = bids_book.decrease_order(order_id, amount)?;
 
         // check maker address against order id
         require!(
@@ -103,42 +108,39 @@ impl TakeSellOrder<'_> {
         );
 
         // price should have quote_decimal value
-        let quote_amount = (order.quantity as u128 * order.price as u128
-            / ((10 as u128).pow(market.base_decimal as u32))) as u64;
+        let base_amount = (amount as u128 * ((10 as u128).pow(market.base_decimal as u32))
+            / order.price as u128) as u64;
 
-        // check base token vault balance
+        // check quote token vault balance
         require!(
-            ctx.accounts.base_vault_account.amount >= order.quantity,
+            ctx.accounts.quote_vault_account.amount >= amount,
             HybridDexError::InsufficientWithdrawBalance
         );
 
-        // check taker quote token balance
+        // check taker base token balance
         require!(
-            ctx.accounts.taker_quote_token_account.amount >= quote_amount,
+            ctx.accounts.taker_base_token_account.amount >= base_amount,
             HybridDexError::InsufficientDepositBalance
         );
 
-        asks_book.orders_count -= 1;
+        maker_open_orders.quote_deposit_total -= amount;
+        maker_open_orders.base_total_volume += base_amount;
+        maker_open_orders.quote_total_volume += amount;
 
-        maker_open_orders.opened_orders_count -= 1;
-        maker_open_orders.base_deposit_total -= order.quantity;
-        maker_open_orders.base_total_volume += order.quantity;
-        maker_open_orders.quote_total_volume += quote_amount;
+        taker_open_orders.base_total_volume += base_amount;
+        taker_open_orders.quote_total_volume += amount;
 
-        taker_open_orders.base_total_volume += order.quantity;
-        taker_open_orders.quote_total_volume += quote_amount;
-
-        market.base_total_volume += order.quantity;
-        market.quote_total_volume += quote_amount;
+        market.base_total_volume += base_amount;
+        market.quote_total_volume += amount;
 
         let seed_bytes = seed.to_le_bytes();
         let seeds = &[MARKET_SEED.as_bytes(), &seed_bytes, &[ctx.bumps.market]];
         let signers_seeds = &[&seeds[..]];
 
-        // transfer base token from vault to taker
+        // transfer quote token from vault to taker
         let cpi_accounts = Transfer {
-            from: ctx.accounts.base_vault_account.to_account_info(),
-            to: ctx.accounts.taker_base_token_account.to_account_info(),
+            from: ctx.accounts.quote_vault_account.to_account_info(),
+            to: ctx.accounts.taker_quote_token_account.to_account_info(),
             authority: market.to_account_info(),
         };
 
@@ -148,19 +150,19 @@ impl TakeSellOrder<'_> {
                 cpi_accounts,
                 signers_seeds,
             ),
-            order.quantity,
+            amount,
         )?;
 
-        // transfer quote token from taker to maker
+        // transfer base token from taker to maker
         let cpi_accounts = Transfer {
-            from: ctx.accounts.taker_quote_token_account.to_account_info(),
-            to: ctx.accounts.maker_quote_token_account.to_account_info(),
+            from: ctx.accounts.taker_base_token_account.to_account_info(),
+            to: ctx.accounts.maker_base_token_account.to_account_info(),
             authority: ctx.accounts.taker.to_account_info(),
         };
 
         token::transfer(
             CpiContext::new(ctx.accounts.token_program.to_account_info(), cpi_accounts),
-            quote_amount,
+            base_amount,
         )?;
 
         Ok(())

@@ -93,7 +93,6 @@ impl TakeBuyOrder<'_> {
         let maker_open_orders = &mut ctx.accounts.maker_open_orders;
         let taker_open_orders = &mut ctx.accounts.taker_open_orders;
 
-        
         let bids_book = &mut ctx.accounts.bids_book;
         let order = bids_book.remove_order(order_id)?;
 
@@ -103,9 +102,9 @@ impl TakeBuyOrder<'_> {
             HybridDexError::IncorrectMakerAddress
         );
 
-        // price should have base_decimal value
-        let base_amount = (order.price as u128 * order.quantity as u128
-            / ((10 as u128).pow(market.quote_decimal as u32))) as u64;
+        // price should have quote_decimal value
+        let base_amount = (order.quantity as u128 * ((10 as u128).pow(market.base_decimal as u32))
+            / order.price as u128) as u64;
 
         // check quote token vault balance
         require!(
@@ -120,7 +119,7 @@ impl TakeBuyOrder<'_> {
         );
 
         bids_book.orders_count -= 1;
-        
+
         maker_open_orders.opened_orders_count -= 1;
         maker_open_orders.quote_deposit_total -= order.quantity;
         maker_open_orders.base_total_volume += base_amount;

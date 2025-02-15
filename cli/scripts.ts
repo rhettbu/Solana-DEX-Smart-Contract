@@ -18,6 +18,7 @@ import {
   getMarketBookState,
   getMarketState,
   getUserMarketOrdersState,
+  partialTakeOrderTx,
   placeOrderTx,
   takeOrderTx,
 } from '../lib/scripts';
@@ -72,15 +73,15 @@ export const setClusterConfig = async (
  * Initialize global pool
  */
 export const initProject = async (
-  maxOrdersPerBook: number,
-  maxOrdersPerUser: number
+  maxOrdersPerUser: number,
+  maxOrdersPerBook: number
 ) => {
   try {
     const tx = new Transaction().add(
       await createInitializeTx(
         payer.publicKey,
-        maxOrdersPerBook,
         maxOrdersPerUser,
+        maxOrdersPerBook,
         program
       )
     );
@@ -127,15 +128,15 @@ export const changeAdmin = async (newAdmin: string) => {
  * Change global config as admin
  */
 export const changeConfig = async (
-  maxOrdersPerBook: number | undefined,
-  maxOrdersPerUser: number | undefined
+  maxOrdersPerUser: number | undefined,
+  maxOrdersPerBook: number | undefined
 ) => {
   try {
     const tx = new Transaction().add(
       await createChangeConfigTx(
         payer.publicKey,
-        maxOrdersPerBook,
         maxOrdersPerUser,
+        maxOrdersPerBook,
         program
       )
     );
@@ -259,6 +260,30 @@ export const takeOrder = async (
     market,
     side,
     orderId,
+    program
+  );
+
+  const txId = await provider.sendAndConfirm(tx, [], {
+    commitment: 'confirmed',
+  });
+
+  console.log('txHash: ', txId);
+};
+
+export const partialTakeOrder = async (
+  market: PublicKey,
+  maker: PublicKey,
+  side: Side,
+  orderId: number,
+  amount: number
+) => {
+  const tx = await partialTakeOrderTx(
+    payer.publicKey,
+    maker,
+    market,
+    side,
+    orderId,
+    amount,
     program
   );
 

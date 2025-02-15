@@ -22,17 +22,6 @@ pub enum HybridDexError {
     OrderNotFound,
     #[msg("Order maker address not matched with passed maker")]
     IncorrectMakerAddress,
-
-    #[msg("Target token mint incorrect")]
-    InvalidTokenMint,
-    #[msg("Unable to withdraw or sweep before presale period ends")]
-    PresaleNotFinished,
-    #[msg("Already purchased token")]
-    AlreadyPurchased,
-    #[msg("Can purchase when presale started")]
-    PresaleNotStarted,
-    #[msg("Cannot purchase after presale ended")]
-    PresaleFinished,
-    #[msg("User not have any purchase")]
-    NeverPurchased,
+    #[msg("Partial take order amount exceed order quantity")]
+    PartialOrderAmountExceed,
 }

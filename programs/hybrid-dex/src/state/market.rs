@@ -58,7 +58,7 @@ pub enum Side {
     Ask = 1,
 }
 
-#[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, Eq, PartialEq)]
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, Eq, PartialEq, Debug)]
 pub struct OpenedOrder {
     pub order_id: u64,
     pub owner: Pubkey,
@@ -84,25 +84,30 @@ impl Book {
 
     pub fn insert_order(&mut self, new_order: OpenedOrder) {
         let idx: usize = 0;
+        let mut inserted: u8 = 0;
+
         for idx in 0..self.orders_count as usize {
-            if idx != self.orders_count as usize && self.side == Side::Bid {
+            if self.side == Side::Bid {
                 if self.orders[idx].price > new_order.price {
+                    self.orders.insert(idx, new_order);
+                    inserted = 1;
                     break;
                 }
-            } else if idx != self.orders_count as usize && self.side == Side::Ask {
+            } else if self.side == Side::Ask {
                 if self.orders[idx].price < new_order.price {
+                    self.orders.insert(idx, new_order);
+                    inserted = 1;
                     break;
                 }
             }
         }
-        if idx == self.orders_count as usize {
+
+        if inserted == 0 {
             if self.orders.len() == self.orders_count as usize {
                 self.orders.push(new_order);
             } else {
                 self.orders[idx] = new_order;
             }
-        } else {
-            self.orders.insert(idx, new_order);
         }
     }
 
@@ -110,23 +115,89 @@ impl Book {
         if self.orders_count == 0 {
             return Err(HybridDexError::OrderNotFound.into());
         } else {
-            let idx: usize = 0;
             for idx in 0..self.orders_count as usize {
-                if idx != self.orders_count as usize && self.orders[idx].order_id == order_id {
-                    break;
-                } else if idx != self.orders_count as usize && self.orders[idx].order_id == order_id
-                {
-                    break;
+                if self.orders[idx].order_id == order_id {
+                    let order = self.orders.remove(idx);
+                    return Ok(order);
+                } else if self.orders[idx].order_id == order_id {
+                    let order = self.orders.remove(idx);
+                    return Ok(order);
                 }
             }
-            if idx == self.orders_count as usize - 1 {
-                return Ok(self.orders[idx].to_owned());
-            } else if idx == self.orders_count as usize {
-                return Err(HybridDexError::OrderNotFound.into());
-            } else {
-                let order = self.orders.remove(idx);
-                Ok(order)
-            }
+            return Err(HybridDexError::OrderNotFound.into());
         }
+    }
+
+    pub fn decrease_order(&mut self, order_id: u64, amount: u64) -> Result<OpenedOrder> {
+        if self.orders_count == 0 {
+            return Err(HybridDexError::OrderNotFound.into());
+        } else {
+            for idx in 0..self.orders_count as usize {
+                if self.orders[idx].order_id == order_id {
+                    if self.orders[idx].quantity <= amount {
+                        return Err(HybridDexError::PartialOrderAmountExceed.into());
+                    }
+                    let mut order = self.orders[idx];
+                    order.quantity -= amount;
+                    return Ok(order);
+                } else if self.orders[idx].order_id == order_id {
+                    if self.orders[idx].quantity <= amount {
+                        return Err(HybridDexError::PartialOrderAmountExceed.into());
+                    }
+                    let mut order = self.orders[idx];
+                    order.quantity -= amount;
+                    return Ok(order);
+                }
+            }
+            return Err(HybridDexError::OrderNotFound.into());
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn generate_new_order(id: u64, price: u64) -> OpenedOrder {
+        OpenedOrder {
+            order_id: id,
+            owner: Pubkey::default(),
+            price,
+            quantity: price,
+            created_at: id as i64,
+        }
+    }
+
+    #[test]
+    fn new_order_tree() -> Result<()> {
+        let mut mockup: Book = Book {
+            side: Side::Bid,
+            market: Pubkey::default(),
+            orders_count: 0,
+            orders: vec![],
+        };
+
+        assert_eq!(mockup.orders_count, 0);
+
+        mockup.insert_order(generate_new_order(mockup.orders_count, 51));
+        mockup.orders_count += 1;
+        mockup.insert_order(generate_new_order(mockup.orders_count, 52));
+        mockup.orders_count += 1;
+        mockup.insert_order(generate_new_order(mockup.orders_count, 47));
+        mockup.orders_count += 1;
+        mockup.insert_order(generate_new_order(mockup.orders_count, 55));
+        mockup.orders_count += 1;
+
+        mockup.remove_order(1)?;
+        mockup.orders_count -= 1;
+
+        println!("{:#?}", mockup.orders);
+
+        mockup.remove_order(3)?;
+        mockup.orders_count -= 1;
+
+        println!("{:#?}", mockup.orders);
+
+        Ok(())
     }
 }
